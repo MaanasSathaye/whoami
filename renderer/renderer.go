@@ -458,7 +458,29 @@ func renderStyledSegments(pdf *gofpdf.Fpdf, segments []model.TextSegment, maxWid
 	lineStartX := currentX
 	remainingWidth := maxWidth
 
-	for _, segment := range segments {
+	// Helper to check if text starts with sentence-ending punctuation (not decimal/number punctuation)
+	startsWithPunct := func(text string) bool {
+		trimmed := strings.TrimLeft(text, " \t\n\r")
+		if len(trimmed) == 0 {
+			return false
+		}
+		// Only treat as punctuation if it's a standalone punctuation character followed by space or is alone
+		// This excludes things like ".8" or ",000" which are parts of numbers
+		if len(trimmed) == 1 {
+			firstChar := rune(trimmed[0])
+			return firstChar == ',' || firstChar == '.' || firstChar == ';' || firstChar == ':' || firstChar == '!' || firstChar == '?' || firstChar == ')' || firstChar == ']' || firstChar == '}'
+		}
+		if len(trimmed) >= 2 {
+			firstChar := rune(trimmed[0])
+			secondChar := rune(trimmed[1])
+			isPunct := firstChar == ',' || firstChar == '.' || firstChar == ';' || firstChar == ':' || firstChar == '!' || firstChar == '?' || firstChar == ')' || firstChar == ']' || firstChar == '}'
+			// Only count as punctuation if followed by space or letter (not a digit)
+			return isPunct && (secondChar == ' ' || (secondChar >= 'a' && secondChar <= 'z') || (secondChar >= 'A' && secondChar <= 'Z'))
+		}
+		return false
+	}
+
+	for i, segment := range segments {
 		style := ""
 		switch segment.Style {
 		case model.StyleBold:
@@ -473,8 +495,21 @@ func renderStyledSegments(pdf *gofpdf.Fpdf, segments []model.TextSegment, maxWid
 
 		pdf.SetFont("Times", style, config.FontSizeBullet)
 
+		text := segment.Text
+
+		// Trim leading whitespace if this segment starts with punctuation
+		if startsWithPunct(text) {
+			text = strings.TrimLeft(text, " \t\n\r")
+		}
+
+		// Check if next segment starts with punctuation
+		nextIsPunct := false
+		if i+1 < len(segments) {
+			nextIsPunct = startsWithPunct(segments[i+1].Text)
+		}
+
 		if segment.URL != "" {
-			segmentWidth := pdf.GetStringWidth(segment.Text + " ")
+			segmentWidth := pdf.GetStringWidth(text)
 
 			if segmentWidth > remainingWidth && currentX > lineStartX {
 				pdf.Ln(config.LineHeight)
@@ -485,14 +520,32 @@ func renderStyledSegments(pdf *gofpdf.Fpdf, segments []model.TextSegment, maxWid
 			}
 
 			pdf.SetTextColor(0, 0, 255)
-			pdf.CellFormat(segmentWidth, config.LineHeight, segment.Text+" ", "", 0, "L", false, 0, segment.URL)
+			pdf.CellFormat(segmentWidth, config.LineHeight, text, "", 0, "L", false, 0, segment.URL)
 			pdf.SetTextColor(0, 0, 0)
 			currentX += segmentWidth
 			remainingWidth -= segmentWidth
 		} else {
-			words := strings.Fields(segment.Text)
-			for _, word := range words {
-				wordWidth := pdf.GetStringWidth(word + " ")
+			words := strings.Fields(text)
+			for j, word := range words {
+				isLastWordInSegment := (j == len(words)-1)
+				isLastSegment := (i == len(segments)-1)
+
+				// Add space after word unless:
+				// 1. It's the last word in the last segment, OR
+				// 2. It's the last word in this segment and next segment starts with punctuation
+				addSpace := true
+				if isLastWordInSegment && isLastSegment {
+					addSpace = false
+				} else if isLastWordInSegment && nextIsPunct {
+					addSpace = false
+				}
+
+				wordText := word
+				if addSpace {
+					wordText = word + " "
+				}
+
+				wordWidth := pdf.GetStringWidth(wordText)
 
 				if wordWidth > remainingWidth && currentX > lineStartX {
 					pdf.Ln(config.LineHeight)
@@ -502,7 +555,7 @@ func renderStyledSegments(pdf *gofpdf.Fpdf, segments []model.TextSegment, maxWid
 					remainingWidth = maxWidth
 				}
 
-				pdf.CellFormat(wordWidth, config.LineHeight, word+" ", "", 0, "L", false, 0, "")
+				pdf.CellFormat(wordWidth, config.LineHeight, wordText, "", 0, "L", false, 0, "")
 				currentX += wordWidth
 				remainingWidth -= wordWidth
 			}
