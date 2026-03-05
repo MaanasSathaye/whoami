@@ -144,7 +144,7 @@ func calculateDynamicSpacing(resume *model.Resume, baseConfig RenderConfig, maxP
 	_, currentY := pdf.GetXY()
 	contentHeight := currentY
 
-	availableHeight := float64(maxPages)*pageHeight - baseConfig.MarginTop - baseConfig.MarginBottom
+	availableHeight := float64(maxPages) * (pageHeight - baseConfig.MarginTop - baseConfig.MarginBottom)
 	usedHeight := contentHeight - baseConfig.MarginTop
 
 	adjustedConfig := baseConfig
